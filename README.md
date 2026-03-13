@@ -8,6 +8,15 @@
 - Backend: `Go`
 - デプロイ先: ローカル `k8s`
 
+## k8s 学習向けに意識している点
+
+- Backend の設定は環境変数で受け取る
+- `livenessProbe` 用に `/health` を返す
+- `readinessProbe` 用に `/ready` を返す
+- ログは標準出力へ出す
+- ローカルファイルに状態を持たない
+- `SIGTERM` で穏当に止まれるようにする
+
 ## ディレクトリ
 
 - `frontend`: ブラウザ向け Todo 画面
@@ -32,6 +41,12 @@ npm test
 docker build -t todo-backend:local ./backend
 docker build -t todo-frontend:local ./frontend
 ```
+
+## Backend の主な環境変数
+
+- `PORT`: HTTP 待受ポート。既定値は `8080`
+- `TODO_API_NAME`: `/health` と `/ready` に載せるアプリ名。既定値は `todo-api`
+- `SHUTDOWN_TIMEOUT_SECONDS`: `SIGTERM` 受信後に停止処理へ使う猶予秒数。既定値は `10`
 
 ## `kind` での起動手順
 

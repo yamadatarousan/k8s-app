@@ -14,19 +14,30 @@ spec:
       labels:
         app: todo-backend
     spec:
+      # SIGTERM 後にアプリ側の Shutdown が走る時間を確保する。
+      terminationGracePeriodSeconds: 15
       containers:
         - name: todo-backend
           image: todo-backend:local
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+            - name: TODO_API_NAME
+              value: "todo-api"
+            - name: SHUTDOWN_TIMEOUT_SECONDS
+              value: "10"
           readinessProbe:
-            tcpSocket:
+            httpGet:
+              path: /ready
               port: 8080
             initialDelaySeconds: 2
             periodSeconds: 5
           livenessProbe:
-            tcpSocket:
+            httpGet:
+              path: /health
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10

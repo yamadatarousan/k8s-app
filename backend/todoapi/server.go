@@ -1,6 +1,7 @@
 package todoapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,23 +16,40 @@ type Todo struct {
 	Completed bool   `json:"completed"`
 }
 
+type Config struct {
+	ApplicationName string
+}
+
 type Server struct {
-	mux   *http.ServeMux
-	mutex sync.Mutex
+	mux    *http.ServeMux
+	config Config
+	mutex  sync.Mutex
 	// 学習用の最小構成なので永続化はまだ持たず、Pod 再作成で消える前提にしている。
 	// StatefulSet や外部 DB を導入する前の段階でも API の疎通確認に集中できる。
 	todos      []Todo
 	nextTodoID uint64
 }
 
-func NewServer() *Server {
-	server := &Server{
-		mux: http.NewServeMux(),
+func NewServer(config Config) *Server {
+	if config.ApplicationName == "" {
+		config.ApplicationName = "todo-api"
 	}
 
+	server := &Server{
+		mux:    http.NewServeMux(),
+		config: config,
+	}
+
+	server.mux.HandleFunc("/health", server.handleHealth)
+	server.mux.HandleFunc("/ready", server.handleReady)
 	server.mux.HandleFunc("/api/todos", server.handleTodos)
 
 	return server
+}
+
+func (server *Server) Shutdown(context.Context) error {
+	// 現状は外部接続やバックグラウンド処理を持たないため、HTTP サーバー側の Shutdown に委ねればよい。
+	return nil
 }
 
 func (server *Server) ServeHTTP(responseWriter http.ResponseWriter, request *http.Request) {
@@ -58,6 +76,30 @@ func (server *Server) handleTodos(responseWriter http.ResponseWriter, request *h
 	default:
 		http.Error(responseWriter, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (server *Server) handleHealth(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		http.Error(responseWriter, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeJSON(responseWriter, http.StatusOK, map[string]string{
+		"status":          "ok",
+		"applicationName": server.config.ApplicationName,
+	})
+}
+
+func (server *Server) handleReady(responseWriter http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodGet {
+		http.Error(responseWriter, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeJSON(responseWriter, http.StatusOK, map[string]string{
+		"status":          "ready",
+		"applicationName": server.config.ApplicationName,
+	})
 }
 
 func (server *Server) handleListTodos(responseWriter http.ResponseWriter) {

@@ -13,7 +13,7 @@ import (
 func TestTodoAPI_Todoを追加して一覧取得できる(t *testing.T) {
 	t.Parallel()
 
-	server := todoapi.NewServer()
+	server := todoapi.NewServer(todoapi.Config{})
 
 	作成リクエストボディ, err := json.Marshal(map[string]string{
 		"title": "k8sでTodoアプリを動かす",
@@ -80,7 +80,7 @@ func TestTodoAPI_Todoを追加して一覧取得できる(t *testing.T) {
 func TestTodoAPI_空タイトルは受け付けない(t *testing.T) {
 	t.Parallel()
 
-	server := todoapi.NewServer()
+	server := todoapi.NewServer(todoapi.Config{})
 
 	リクエスト := httptest.NewRequest(http.MethodPost, "/api/todos", bytes.NewReader([]byte(`{"title":""}`)))
 	リクエスト.Header.Set("Content-Type", "application/json")
@@ -90,5 +90,46 @@ func TestTodoAPI_空タイトルは受け付けない(t *testing.T) {
 
 	if レスポンス.Code != http.StatusBadRequest {
 		t.Fatalf("期待したステータスは400、実際は%d", レスポンス.Code)
+	}
+}
+
+func TestTodoAPI_ヘルスチェックを返す(t *testing.T) {
+	t.Parallel()
+
+	server := todoapi.NewServer(todoapi.Config{
+		ApplicationName: "todo-api",
+	})
+
+	healthRequest := httptest.NewRequest(http.MethodGet, "/health", nil)
+	healthResponse := httptest.NewRecorder()
+
+	server.ServeHTTP(healthResponse, healthRequest)
+
+	if healthResponse.Code != http.StatusOK {
+		t.Fatalf("期待したステータスは200、実際は%d", healthResponse.Code)
+	}
+
+	var healthResult struct {
+		Status          string `json:"status"`
+		ApplicationName string `json:"applicationName"`
+	}
+	if err := json.Unmarshal(healthResponse.Body.Bytes(), &healthResult); err != nil {
+		t.Fatalf("healthレスポンスのJSON解析に失敗: %v", err)
+	}
+
+	if healthResult.Status != "ok" {
+		t.Fatalf("期待した状態はok、実際は%q", healthResult.Status)
+	}
+	if healthResult.ApplicationName != "todo-api" {
+		t.Fatalf("期待したアプリ名と異なる: %q", healthResult.ApplicationName)
+	}
+
+	readyRequest := httptest.NewRequest(http.MethodGet, "/ready", nil)
+	readyResponse := httptest.NewRecorder()
+
+	server.ServeHTTP(readyResponse, readyRequest)
+
+	if readyResponse.Code != http.StatusOK {
+		t.Fatalf("期待したステータスは200、実際は%d", readyResponse.Code)
 	}
 }
