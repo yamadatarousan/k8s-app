@@ -1,0 +1,17 @@
+# macOS の作業ゴミ
+.DS_Store
+
+# Frontend の依存関係と生成物
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/*.tsbuildinfo
+
+# Backend のビルド生成物
+backend/server
+backend/todo-api
+
+# Go のテスト・カバレッジ生成物
+backend/*.test
+backend/coverage.out
