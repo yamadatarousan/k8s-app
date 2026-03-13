@@ -60,10 +60,12 @@ kind create cluster --name todo-app --config kind/cluster.yaml
 
 ### 2. Ingress Controller を導入
 
-`Ingress NGINX` の公式導入手順に合わせて、コントローラーを追加します。
+`kind` では `provider/cloud` ではなく `provider/kind` を使います。
+ここを間違えると Controller Pod は起動しても `http://todo.local/` に到達しません。
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.0/deploy/static/provider/cloud/deploy.yaml
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.0/deploy/static/provider/kind/deploy.yaml
+kubectl -n ingress-nginx patch deployment ingress-nginx-controller --type='merge' -p '{"spec":{"template":{"spec":{"nodeSelector":{"kubernetes.io/os":"linux","ingress-ready":"true"}}}}}'
 kubectl wait --namespace ingress-nginx \
   --for=condition=ready pod \
   --selector=app.kubernetes.io/component=controller \
@@ -93,7 +95,47 @@ kubectl apply -f k8s/todo-app.yaml
 127.0.0.1 todo.local
 ```
 
-その後、`http://todo.local/` にアクセスします。
+### 6. 到達確認
+
+ブラウザを開く前に、`todo.local` へ到達できることを確認します。
+
+```bash
+kubectl -n ingress-nginx get pods
+kubectl get ingress
+curl -I -H 'Host: todo.local' http://127.0.0.1/
+```
+
+`HTTP/1.1 200 OK` か `HTTP/1.1 304 Not Modified` が返れば、`http://todo.local/` へアクセスできます。
+
+## `kind` クラスターの停止・再開・再作成
+
+ローカル開発では「一時停止」と「完全削除」を分けて扱います。
+
+### 一時停止（状態を残す）
+
+`Pod` や `Service` を残したまま、`kind` ノードコンテナだけ停止します。
+
+```bash
+docker stop $(docker ps -a --filter "label=io.x-k8s.kind.cluster=todo-app" --format '{{.Names}}')
+```
+
+### 再開（停止した状態から戻す）
+
+停止したノードコンテナを起動し、`kubectl` の接続先を戻します。
+
+```bash
+docker start $(docker ps -a --filter "label=io.x-k8s.kind.cluster=todo-app" --format '{{.Names}}')
+kubectl config use-context kind-todo-app
+```
+
+### 完全削除（作り直し）
+
+`delete` は破壊的操作です。クラスター内のリソースは消えるため、その後は本 README の「起動手順」を 1 から再実行する必要があります。
+
+```bash
+kind delete cluster --name todo-app
+kind create cluster --name todo-app --config kind/cluster.yaml
+```
 
 ## 補足
 
