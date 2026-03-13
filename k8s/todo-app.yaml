@@ -173,15 +173,6 @@ kind: Ingress
 metadata:
   # Backend 用ルールをまとめた Ingress 名。
   name: todo-backend
-  # annotations は Ingress Controller 固有の細かい挙動調整に使う。
-  annotations:
-    # ローカル学習用では path ベースで Frontend と Backend を切り替えると、
-    # Pod を分離したままブラウザからは単一オリジンで扱えるため確認しやすい。
-    # 正規表現パスを有効にし、/api 付き URL を柔軟に拾えるようにする。
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    # /api を Backend 側に渡さず、後半のパスだけに書き換える。
-    # 例: /api/tasks -> /tasks
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
   # nginx Ingress Controller がこのルールを処理する前提。
   ingressClassName: nginx
@@ -191,10 +182,10 @@ spec:
     - host: todo.local
       http:
         paths:
-          # /api で始まるリクエストを Backend に振り分ける。
-          - path: /api(/|$)(.*)
-            # 正規表現解釈を使うため controller 依存の ImplementationSpecific を選ぶ。
-            pathType: ImplementationSpecific
+          # /api で始まるリクエストをそのまま Backend に振り分ける。
+          - path: /api
+            # Prefix にして /api/todos など配下のパスをまとめて扱う。
+            pathType: Prefix
             backend:
               service:
                 # 転送先は Backend Service。
