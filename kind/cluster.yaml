@@ -1,0 +1,22 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+nodes:
+  - role: control-plane
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            # ingress-nginx の kind 向け導入手順では、このラベルを持つノードに
+            # コントローラーを載せる前提がある。
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # ローカル学習ではブラウザから通常の HTTP / HTTPS ポートで触れる方が分かりやすい。
+      # もし 80 / 443 がホストで使用中なら 8080 / 8443 に変更する。
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+  - role: worker

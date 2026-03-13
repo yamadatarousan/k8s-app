@@ -33,21 +33,58 @@ docker build -t todo-backend:local ./backend
 docker build -t todo-frontend:local ./frontend
 ```
 
-## k8s への適用例
+## `kind` での起動手順
 
-`minikube` を使う場合の一例です。
+実務に近い形を意識して、ローカルクラスターは `kind` を前提にします。
+
+### 1. kind クラスター作成
 
 ```bash
-minikube addons enable ingress
-minikube image load todo-backend:local
-minikube image load todo-frontend:local
+kind create cluster --name todo-app --config kind/cluster.yaml
+```
+
+### 2. Ingress Controller を導入
+
+`Ingress NGINX` の公式導入手順に合わせて、コントローラーを追加します。
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.0/deploy/static/provider/cloud/deploy.yaml
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=120s
+```
+
+### 3. アプリ用イメージをクラスターへ投入
+
+```bash
+docker build -t todo-backend:local ./backend
+docker build -t todo-frontend:local ./frontend
+kind load docker-image todo-backend:local --name todo-app
+kind load docker-image todo-frontend:local --name todo-app
+```
+
+### 4. マニフェスト適用
+
+```bash
 kubectl apply -f k8s/todo-app.yaml
 ```
 
-`Ingress NGINX` を有効にした上で、`/etc/hosts` に次を追加します。
+### 5. 名前解決を追加
+
+`/etc/hosts` に次を追加します。
 
 ```text
 127.0.0.1 todo.local
 ```
 
 その後、`http://todo.local/` にアクセスします。
+
+## 補足
+
+- `kind` のクラスタ定義は [kind/cluster.yaml](/Users/user/Development/k8s-app/kind/cluster.yaml) にあります。
+- `Ingress NGINX` の導入元は公式ドキュメントです。
+  https://kubernetes.github.io/ingress-nginx/deploy/
+- `kind` で Ingress を扱う前提は公式ドキュメントの構成に合わせています。
+  https://kind.sigs.k8s.io/docs/user/ingress/
+- 2026年3月13日時点では `Ingress NGINX` は引退告知済みで、2026年3月まで best-effort maintenance と案内されています。学習用にはまだ有用ですが、中長期では `Gateway API` も合わせて学ぶ前提で捉えるのが妥当です。
