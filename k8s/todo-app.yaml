@@ -1,139 +1,232 @@
+# apps/v1 は Deployment を定義するための安定版 API グループ。
 apiVersion: apps/v1
+# Backend の Pod 群を宣言的に管理するため Deployment を使う。
 kind: Deployment
+# metadata には Kubernetes 上でこのリソースを識別する名前やラベルを置く。
 metadata:
+  # Deployment 自体の名前。kubectl で参照するときにも使う。
   name: todo-backend
+  # labels は検索や関連付けに使う付加情報。
   labels:
+    # この Deployment が Backend 系のリソースであることを示すラベル。
     app: todo-backend
+# spec に望ましい状態を書く。
 spec:
+  # 学習用のため Pod は 1 個だけ起動する。冗長化はここでは目的外。
   replicas: 1
+  # selector は「この Deployment がどの Pod を自分の管理対象とみなすか」の条件。
   selector:
     matchLabels:
+      # template.metadata.labels と完全に一致させないと作成時にエラーになる。
       app: todo-backend
+  # template は Deployment が実際に作る Pod のひな型。
   template:
     metadata:
       labels:
+        # Service や Deployment の selector から見つけられるよう同じラベルを付ける。
         app: todo-backend
     spec:
       # SIGTERM 後にアプリ側の Shutdown が走る時間を確保する。
+      # 即時終了だと処理中のリクエストを雑に切る可能性があるため短い猶予を持たせる。
       terminationGracePeriodSeconds: 15
+      # containers に Pod 内で動かすコンテナ一覧を書く。
       containers:
+        # 今回の Pod は Backend コンテナ 1 個だけで構成する。
         - name: todo-backend
+          # kind クラスタ内に事前ロードしたローカル画像を使う想定。
           image: todo-backend:local
+          # ローカル学習用途なので、既にノード上にある画像を優先し無駄な取得を避ける。
           imagePullPolicy: IfNotPresent
+          # ports は主に可読性と一部ツール向けの宣言で、ここでは 8080 で待ち受ける。
           ports:
             - containerPort: 8080
+          # env でアプリに渡す環境変数を定義する。
           env:
+            # アプリ本体が待ち受けるポート番号を明示する。
             - name: PORT
               value: "8080"
+            # 画面やログで API 名を出し分ける用途を想定した識別名。
             - name: TODO_API_NAME
               value: "todo-api"
+            # graceful shutdown の内部タイムアウト。terminationGracePeriodSeconds より短くしておく。
             - name: SHUTDOWN_TIMEOUT_SECONDS
               value: "10"
+          # readinessProbe は「この Pod に通信を流してよいか」を判定する。
           readinessProbe:
             httpGet:
+              # 依存初期化が終わったら 200 を返す前提のエンドポイント。
               path: /ready
+              # アプリの HTTP ポートに対して確認する。
               port: 8080
+            # 起動直後に少し待ってから確認を始め、無駄な失敗判定を避ける。
             initialDelaySeconds: 2
+            # 学習用なので短めの間隔で確認し、状態変化を早く反映する。
             periodSeconds: 5
+          # livenessProbe は「プロセスが生きているか」を判定し、壊れていれば再起動させる。
           livenessProbe:
             httpGet:
+              # アプリが死活確認用に公開している前提のエンドポイント。
               path: /health
+              # readiness と同じ HTTP ポートを使う。
               port: 8080
+            # 起動処理中に誤って再起動されないよう readiness より長めに待つ。
             initialDelaySeconds: 5
+            # こちらは死活監視なので readiness より少し緩めの周期にする。
             periodSeconds: 10
+# YAML のドキュメント区切り。ここから別リソース。
 ---
+# Service は Pod 群への安定した入口を提供する。
 apiVersion: v1
+# ClusterIP Service を作って Backend Pod へ名前解決できるようにする。
 kind: Service
 metadata:
+  # Ingress や他 Pod から参照する Backend Service 名。
   name: todo-backend
 spec:
+  # このラベルを持つ Pod に通信を転送する。
   selector:
     app: todo-backend
+  # 公開するポート定義。Service 側の見せ方と Pod 側の実ポートを結ぶ。
   ports:
+    # Service の 8080 番で受けた通信を Pod の 8080 番へ流す。
     - port: 8080
       targetPort: 8080
+# YAML のドキュメント区切り。ここから Frontend の Deployment。
 ---
+# Frontend も Deployment で管理する。
 apiVersion: apps/v1
+# 静的ファイル配信系の Frontend Pod 群を宣言する。
 kind: Deployment
 metadata:
+  # Frontend Deployment の名前。
   name: todo-frontend
+  # Frontend 系リソースを識別するためのラベル。
   labels:
     app: todo-frontend
 spec:
+  # こちらも学習用のため 1 Pod だけ起動する。
   replicas: 1
+  # Deployment が管理対象とする Pod のラベル条件。
   selector:
     matchLabels:
+      # Pod template 側と一致させる必要がある。
       app: todo-frontend
+  # 実際に作る Pod のひな型。
   template:
     metadata:
       labels:
+        # Frontend Service がこの Pod を見つけられるよう同じラベルを付ける。
         app: todo-frontend
     spec:
+      # Frontend Pod で動かすコンテナ一覧。
       containers:
+        # 静的ファイル配信用コンテナ。
         - name: todo-frontend
+          # ローカルでビルドした Frontend 画像を使う前提。
           image: todo-frontend:local
+          # kind ノードに画像があればそれを再利用する。
           imagePullPolicy: IfNotPresent
+          # Web サーバーは 80 番で待ち受ける。
           ports:
             - containerPort: 80
+          # Frontend は単純な HTTP 配信を想定し、まずソケット接続できるかで受け入れ可否を見る。
           readinessProbe:
             tcpSocket:
+              # TCP で 80 番へ接続できれば配信準備完了とみなす。
               port: 80
+            # サーバー起動直後の空振りを避けるため少し待つ。
             initialDelaySeconds: 2
+            # 学習用途なので短め周期で状態を反映する。
             periodSeconds: 5
+          # livenessProbe も TCP 接続で確認し、応答不能なら再起動する。
           livenessProbe:
             tcpSocket:
+              # Frontend Web サーバーの待ち受けポート。
               port: 80
+            # 起動中の誤検知を避けるため readiness より遅らせる。
             initialDelaySeconds: 5
+            # 死活確認は readiness よりやや緩めに行う。
             periodSeconds: 10
+# YAML のドキュメント区切り。ここから Frontend Service。
 ---
+# Service の API は core/v1。
 apiVersion: v1
+# Frontend Pod への安定した名前を提供する。
 kind: Service
 metadata:
+  # Ingress から参照される Frontend Service 名。
   name: todo-frontend
 spec:
+  # Frontend ラベルを持つ Pod に通信を流す。
   selector:
     app: todo-frontend
   ports:
+    # Service の 80 番を Pod の 80 番にそのままつなぐ。
     - port: 80
       targetPort: 80
+# YAML のドキュメント区切り。ここから Backend 向け Ingress。
 ---
+# Ingress は HTTP レイヤーでルーティングするためのリソース。
 apiVersion: networking.k8s.io/v1
+# /api 配下を Backend Service へ流す Ingress。
 kind: Ingress
 metadata:
+  # Backend 用ルールをまとめた Ingress 名。
   name: todo-backend
+  # annotations は Ingress Controller 固有の細かい挙動調整に使う。
   annotations:
     # ローカル学習用では path ベースで Frontend と Backend を切り替えると、
     # Pod を分離したままブラウザからは単一オリジンで扱えるため確認しやすい。
+    # 正規表現パスを有効にし、/api 付き URL を柔軟に拾えるようにする。
     nginx.ingress.kubernetes.io/use-regex: "true"
+    # /api を Backend 側に渡さず、後半のパスだけに書き換える。
+    # 例: /api/tasks -> /tasks
     nginx.ingress.kubernetes.io/rewrite-target: /$2
 spec:
+  # nginx Ingress Controller がこのルールを処理する前提。
   ingressClassName: nginx
+  # host ごとのルーティング規則。
   rules:
+    # todo.local 宛てアクセスに対してこのルールを適用する。
     - host: todo.local
       http:
         paths:
+          # /api で始まるリクエストを Backend に振り分ける。
           - path: /api(/|$)(.*)
+            # 正規表現解釈を使うため controller 依存の ImplementationSpecific を選ぶ。
             pathType: ImplementationSpecific
             backend:
               service:
+                # 転送先は Backend Service。
                 name: todo-backend
                 port:
+                  # Service の 8080 番へ送る。
                   number: 8080
+# YAML のドキュメント区切り。ここから Frontend 向け Ingress。
 ---
+# Ingress も networking.k8s.io/v1 を使う。
 apiVersion: networking.k8s.io/v1
+# ルート配下を Frontend Service に流す Ingress。
 kind: Ingress
 metadata:
+  # Frontend 用ルールの名前。
   name: todo-frontend
 spec:
+  # こちらも nginx Ingress Controller に処理させる。
   ingressClassName: nginx
   rules:
+    # Backend Ingress と同じホスト名で受け、パスで役割分担する。
     - host: todo.local
       http:
         paths:
+          # /api 以外の通常画面アクセスはすべて Frontend 側へ流す。
           - path: /
+            # Prefix により / 配下すべてをまとめて扱う。
             pathType: Prefix
             backend:
               service:
+                # 転送先は Frontend Service。
                 name: todo-frontend
                 port:
+                  # Service の 80 番へ送る。
                   number: 80
